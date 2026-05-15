@@ -5,6 +5,7 @@
         android:allowBackup="true"
         android:label="Ailock"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Ailock">
 
         <activity

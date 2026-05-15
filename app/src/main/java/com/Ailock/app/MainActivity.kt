@@ -46,35 +46,34 @@ enum class Screen {
     UNLOCKED_HOME
 }
 
-data class LockRequest(
-    val appName: String,
-    val lockReason: String
+data class CurrentStats(
+    val willPowerScore: Int,
+    val todayOpenAppCount: Int,
+    val accumUseApp: Int
 )
 
-data class UnlockRequest(
+data class UserRequest(
     val appName: String,
-    val userInput: String
+    val userInput: String,
+    val lockReason: String,
+    val currentStats: CurrentStats
 )
 
-data class AiResponse(
-    val allowedTime: Int,
-    val text: String
+data class UserResponse(
+    val status: String,
+    val text: String,
+    val allowedTime: Int
 )
 
 interface ApiService {
-    @POST("/lock")
-    suspend fun lockApp(
-        @Body request: LockRequest
-    )
-
-    @POST("/unlock")
+    @POST("/testFinal")
     suspend fun judgeUnlock(
-        @Body request: UnlockRequest
-    ): AiResponse
+        @Body request: UserRequest
+    ): UserResponse
 }
 
 object RetrofitClient {
-    private const val BASE_URL = "http://10.0.2.2:8080"
+    private const val BASE_URL = "http://10.0.2.2:8080/"
 
     val api: ApiService = Retrofit.Builder()
         .baseUrl(BASE_URL)
@@ -86,39 +85,34 @@ object RetrofitClient {
 @Composable
 fun LockFlowScreen() {
     var screen by remember { mutableStateOf(Screen.LOCK_REASON) }
+
+    var lockReason by remember { mutableStateOf("") }
     var aiText by remember { mutableStateOf("") }
     var allowedTime by remember { mutableStateOf(0) }
+    var aiStatus by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
 
+    val appName = "INSTAGRAM"
+
+    val currentStats = CurrentStats(
+        willPowerScore = 70,
+        todayOpenAppCount = 5,
+        accumUseApp = 45
+    )
+
     when (screen) {
         Screen.LOCK_REASON -> LockReasonScreen(
-            appName = "INSTAGRAM",
-            onSubmit = { lockReason ->
-                coroutineScope.launch {
-                    try {
-                        RetrofitClient.api.lockApp(
-                            LockRequest(
-                                appName = "INSTAGRAM",
-                                lockReason = lockReason
-                            )
-                        )
-
-                        isError = false
-                        screen = Screen.LOCK_COMPLETE
-                    } catch (e: Exception) {
-                        isError = true
-                        aiText = "앗, 오류가 발생했어.\n 다시 시도해줘"
-                        allowedTime = 0
-                        screen = Screen.AI_RESULT
-                    }
-                }
+            appName = appName,
+            onSubmit = { inputLockReason ->
+                lockReason = inputLockReason
+                screen = Screen.LOCK_COMPLETE
             }
         )
 
         Screen.LOCK_COMPLETE -> LockCompleteScreen(
-            appName = "INSTAGRAM",
+            appName = appName,
             onTimeout = {
                 screen = Screen.LOCKED_HOME
             }
@@ -137,20 +131,24 @@ fun LockFlowScreen() {
                         screen = Screen.AI_LOADING
 
                         val response = RetrofitClient.api.judgeUnlock(
-                            UnlockRequest(
-                                appName = "INSTAGRAM",
-                                userInput = userInput
+                            UserRequest(
+                                appName = appName,
+                                userInput = userInput,
+                                lockReason = lockReason,
+                                currentStats = currentStats
                             )
                         )
 
                         isError = false
+                        aiStatus = response.status
                         aiText = response.text
                         allowedTime = response.allowedTime
-
                         screen = Screen.AI_RESULT
+
                     } catch (e: Exception) {
                         isError = true
-                        aiText = "앗, 오류가 발생했어.\n 다시 시도해줘"
+                        aiStatus = "FAIL"
+                        aiText = "서버 연결 중 오류가 발생했어.\n다시 시도해줘."
                         allowedTime = 0
                         screen = Screen.AI_RESULT
                     }
@@ -163,7 +161,7 @@ fun LockFlowScreen() {
         Screen.AI_RESULT -> AiResultScreen(
             text = aiText,
             allowedTime = allowedTime,
-            showButton = allowedTime > 0 && !isError,
+            showButton = allowedTime > 0 && !isError && aiStatus != "CRITICAL" && aiStatus != "FAIL",
             isError = isError,
             onClickGoApp = {
                 screen = Screen.UNLOCKED_HOME
@@ -298,23 +296,43 @@ fun LockCompleteScreen( //잠금 완료 화면
 }
 
 @Composable
-fun LockedHomeScreen( //인스타가 잠금된 홈화면 (임시)
+fun LockedHomeScreen(
     onClickInstagram: () -> Unit
 ) {
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White),
-        contentAlignment = Alignment.Center
+            .background(Color(0xFFF5F5F5))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Image(
-            painter = painterResource(id = R.drawable.instagram),
-            contentDescription = "Instagram",
+        Text(
+            text = "잠긴 앱 목록",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onClickInstagram,
             modifier = Modifier
-                .size(150.dp)
-                .clickable {
-                    onClickInstagram()
-                }
+                .fillMaxWidth()
+                .height(56.dp)
+        ) {
+            Text(
+                text = "Instagram 열기",
+                fontSize = 18.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = "Instagram은 현재 잠금 상태입니다.",
+            fontSize = 14.sp,
+            color = Color.Gray
         )
     }
 }
